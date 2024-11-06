@@ -1,0 +1,205 @@
+---
+title: "PAC1 Anàlisi de dades òmiques"
+author: "Arantxa Vázquez"
+date: "2024-10-27"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+# 1. Introducción
+
+En Bioinformática nos encontramos con distintos desafíos al querer analizar grandes conjuntos de datos complejos puesto que, para dar validez a ensayos clínicos, con frecuencia se requieren grandes muestras y eso conlleva una recogida de datos muy voluminosa. 
+Para hacer frente a este reto se usan herramientas como Bioconductor el cual engloba miles de paquetes ya simplificados y enfocados a tratar con este tipo de datos clínicos. 
+En esta actividad pondremos en práctica algunos de los principales paquetes y veremos como se resuelve una tarea bioinformática.
+
+# 2. Objetivos
+
+- Objetivo general: realizar un análisis de datos ómicos obtenidos del repositorio https://github.com/nutrimetabolomics/metaboData/ mediante R y los paquetes incluídos en las librerías de Bioconductor. 
+- Objetivos específicos: 
+1. Poner en práctica los conocimientos adquiridos sobre Bioconductor 
+2. Crear un contenedor tipo SummarizedExperiment para aprender más sobre su uso 
+3. Realizar un análisis exploratorio de los datos ómicos elegidos
+
+# 3. Materiales y métodos 
+
+En primer lugar, instalamos algunos de los paquetes que podemos necesitar:
+
+```{r}
+if (!require(SummarizedExperiment)) BiocManager::install("SummarizedExperiment")
+if (!require(PCAtools)) BiocManager::install("PCAtools")
+if (!require(factoextra)) install.packages("factoextra", dep = TRUE)
+if (!require(ggalt)) install.packages("ggalt", dep = TRUE)
+```
+
+Vamos a seleccionar un conjunto de datos del repositorio gitHub https://github.com/nutrimetabolomics/metaboData/. Hemos elegido el conjunto de datos de Cachexia porque es una patología que afecta a un gran porcentaje de pacientes oncológicos [1] y tiene un dataset muy popular donde se miden 63 metabolitos y se intentan correlacionar con la pérdida de masa muscular que es uno de los efectos más preocupantes de esta enfermedad. 
+
+A continuación importamos el dataset desde el repositorio. 
+
+```{r}
+# Importamos librerías
+library(readxl)
+library(knitr)
+
+# Importamos el dataset
+file_path <- "/Users/varantxa/metaboData/Datasets/2024-Cachexia/human_cachexia.csv"
+data <- read.csv(file_path)
+
+# Imprimimos las primeras líneas para comprobar la correcta importación
+kable(head(data))
+```
+
+Los métodos utilizados son análisis bioinformáticos y bioestadísticos. Hemos utilizado la expresión de Summarized Experiment para poder trabajar con los conjuntos de datos con sus metadatos y poder seleccionar exactamente las variables que deseáramos sin perder información. A demás hemos realizado análisis estadísticos tales como mapas de calor, matrices de correlaciones y análisis de componentes principales para entender cómo se correlacionaban nuestras variables. 
+
+# 4. Resultados
+
+En primer lugar hemos observado los datos originales para comprobar qué estructura seguían y hemos visto que es un conjunto de datos donde hay 77 observaciones y 63 variables medidas. 
+
+```{r}
+# Observamos la estructura del dataset
+str(data)
+```
+
+A continuación hemos llevado a cabo la extracción de todos los datos y metadatos en un contenedor SummarizedExperiment. Para poder hacer este paso hemos tenido que extraer la matriz de abundancias de las variables, luego adaptar las longitudes y posteriormente hemos podido crear el Dataframe con los metadatos para finalmente guardarlo en un contenedor. 
+
+
+```{r}
+
+# Cargamos la biblioteca SummarizedExperiment
+library(SummarizedExperiment)
+
+# Extraemos la matriz de abundancias, omitiendo las primeras dos columnas (Patient.ID y Muscle.loss)
+counts_matrix <- as.matrix(data[, -c(1, 2)])
+
+# Asignamos los nombres de fila utilizando el identificador de paciente
+rownames(counts_matrix) <- data$Patient.ID
+
+# Aseguramos que los nombres de fila sean únicos y válidos
+rownames(counts_matrix) <- make.names(data$Patient.ID, unique = TRUE)
+
+# Creamos un vector de condiciones que refleje el estado de Muscle.loss para las muestras usando la longitud de counts_matrix para asegurar que coinciden
+conditions <- factor(data$Muscle.loss[1:ncol(counts_matrix)])  
+
+# Creamos el DataFrame de metadatos
+colData <- DataFrame(sample = colnames(counts_matrix), condition = conditions)
+
+# Verificamos la estructura de colData
+str(colData)
+
+# Creamos el objeto SummarizedExperiment con los datos de abundancias y los metadatos
+se <- SummarizedExperiment(assays = list(counts = counts_matrix), colData = colData)
+
+# Imprimimos el resumen del objeto para comprobar que se haya creado correctamente
+print(se)
+
+
+```
+Una vez obtenido nuestro objeto 'se' procedemos al análisis exploratorio: 
+
+1. Observamos las dimensiones del objeto y los nombres de columnas y filas
+
+```{r}
+# Inspeccionamos las dimensiones
+dim(se)
+
+# Observamos los nombres de las filas (muestras) y columnas (metabolitos)
+rownames(se)
+colnames(se)
+
+```
+
+2. REalizamos un resumen estadístico para tener una visión general de los datos
+
+```{r}
+# Resumen estadístico de los datos
+summary(assay(se))
+
+```
+
+3. Observamos la estructura de las condiciones y las muestras
+
+```{r}
+# Ver la estructura
+str(colData(se))
+
+```
+4. Realizamos una tabla de frecuencias de las condiciones
+
+```{r}
+# Tabla de frecuencias para las condiciones
+table(colData(se)$condition)
+
+```
+
+5.  Realizamos una matriz de correlación de las variables 
+
+```{r}
+
+# Importamos la librería
+library(corrplot)
+
+# Creamos e imprimimos la matriz
+cor_matrix <- cor(t(assay(se)), use = "complete.obs")
+corrplot(cor_matrix, method = "circle", tl.col = "black", tl.cex = 0.4)  # Ajustar el tamaño de la fuente
+
+```
+
+6. Creamos un mapa de calor con las variables 
+
+```{r}
+# Importamos librerías
+library(corrplot)
+
+# Creamos el mapa de calor
+cor_matrix <- cor(t(assay(se)), use = "complete.obs")
+heatmap(cor_matrix, Rowv = NA, Colv = NA, scale = "none", col = heat.colors(256), margins = c(10, 10))
+
+
+```
+
+7. Por último, realizamos un análisis de componentes principales para averiguar qué variables tienen más poder predictivo en nuestro conjunto de datos
+
+```{r}
+
+# Estandarizaoms los datos
+standardized_data <- scale(t(assay(se)))  
+
+# Realizamos el PCA
+pca_result <- prcomp(standardized_data)  
+
+# Imprimimos el gráfico del PCA
+plot(pca_result$x[, c(2, 3)], col = as.factor(colData(se)$condition),
+     pch = 19, xlab = "PC2", ylab = "PC3", main = "PCA de Metabolitos (PC2 vs PC3")
+
+```
+
+
+
+# 5. Discusión 
+
+Hemos realizado un análisis exploratorio de nuestros datos en el cual hemos decidido optar por análisis de correlación puesto que teníamos muchas variables medidas y el número de la muestra era reducido. 
+Tenemos un grupo control muy pequeño y la muestra no es del todo representativa pero sí podemos observar algunos patrones como correlaciones fuertes entre algunos metabolitos según muestran las matrices de correlación. 
+En el análisis de componentes principales hemos visto que hay 1 componente que captura la mayor variabilidad en los datos, eso quiere decir que hay pocos metabolitos que están marcando diferencias grandes entre el grupo control y el grupo con caquexia, así que esos metabolitos podrían tener un fuerte poder predictivo de la enfermedad y eso podría ser útil para decidir tratamiento. 
+
+En este trabajo hemos practivado el uso de Bioconductor y contenedores para poder agrupar una gran cantidad de datos y hemos visto lo fácil que resulta el manejo de los datos ómicos con estas herramientas. 
+
+
+# 6. Referencias 
+
+- Instituto Nacional del Cáncer. Caquexia [Internet]. [Actualizado el 20 de marzo de 2020; consultado el 6 de noviembre de 2024]. Disponible en: https://www.cancer.gov/espanol/cancer/tratamiento/investigacion/caquexia.
+
+# 7. Repositorio gitHub
+
+https://github.com/varantxa/Vazquez-Albacete-Arantxa-PEC1.git
+
+```{r}
+# Guardamos el objeto SummarizedExperiment en un archivo .Rda
+save(se, file = "se_metabolitos.Rda")
+```
+
