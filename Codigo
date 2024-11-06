@@ -1,0 +1,75 @@
+# Importamos librerías
+if (!require(SummarizedExperiment)) BiocManager::install("SummarizedExperiment")
+if (!require(PCAtools)) BiocManager::install("PCAtools")
+if (!require(factoextra)) install.packages("factoextra", dep = TRUE)
+if (!require(ggalt)) install.packages("ggalt", dep = TRUE)
+library(readxl)
+library(knitr)
+
+# Importamos el dataset
+file_path <- "/Users/varantxa/metaboData/Datasets/2024-Cachexia/human_cachexia.csv"
+data <- read.csv(file_path)
+
+# Imprimimos las primeras líneas para comprobar la correcta importación
+kable(head(data))
+# Observamos la estructura del dataset
+str(data)
+# Cargamos la biblioteca SummarizedExperiment
+library(SummarizedExperiment)
+
+# Extraemos la matriz de abundancias, omitiendo las primeras dos columnas (Patient.ID y Muscle.loss)
+counts_matrix <- as.matrix(data[, -c(1, 2)])
+
+# Asignamos los nombres de fila utilizando el identificador de paciente
+rownames(counts_matrix) <- data$Patient.ID
+
+# Aseguramos que los nombres de fila sean únicos y válidos
+rownames(counts_matrix) <- make.names(data$Patient.ID, unique = TRUE)
+
+# Creamos un vector de condiciones que refleje el estado de Muscle.loss para las muestras usando la longitud de counts_matrix para asegurar que coinciden
+conditions <- factor(data$Muscle.loss[1:ncol(counts_matrix)])  
+
+# Creamos el DataFrame de metadatos
+colData <- DataFrame(sample = colnames(counts_matrix), condition = conditions)
+
+# Verificamos la estructura de colData
+str(colData)
+# Creamos el objeto SummarizedExperiment con los datos de abundancias y los metadatos
+se <- SummarizedExperiment(assays = list(counts = counts_matrix), colData = colData)
+
+# Imprimimos el resumen del objeto para comprobar que se haya creado correctamente
+print(se)
+# Inspeccionamos las dimensiones
+dim(se)
+# Observamos los nombres de las filas (muestras) y columnas (metabolitos)
+rownames(se)
+colnames(se)
+# Resumen estadístico de los datos
+summary(assay(se))
+# Ver la estructura
+str(colData(se))
+# Tabla de frecuencias para las condiciones
+table(colData(se)$condition)
+# Importamos la librería
+library(corrplot)
+
+# Creamos e imprimimos la matriz
+cor_matrix <- cor(t(assay(se)), use = "complete.obs")
+corrplot(cor_matrix, method = "circle", tl.col = "black", tl.cex = 0.4)  # Ajustar el tamaño de la fuente
+# Importamos librerías
+library(corrplot)
+
+# Creamos el mapa de calor
+cor_matrix <- cor(t(assay(se)), use = "complete.obs")
+heatmap(cor_matrix, Rowv = NA, Colv = NA, scale = "none", col = heat.colors(256), margins = c(10, 10))
+# Estandarizaoms los datos
+standardized_data <- scale(t(assay(se)))  
+
+# Realizamos el PCA
+pca_result <- prcomp(standardized_data)  
+
+# Imprimimos el gráfico del PCA
+plot(pca_result$x[, c(2, 3)], col = as.factor(colData(se)$condition),
+     pch = 19, xlab = "PC2", ylab = "PC3", main = "PCA de Metabolitos (PC2 vs PC3")
+# Guardamos el objeto SummarizedExperiment en un archivo .Rda
+save(se, file = "se_metabolitos.Rda")
